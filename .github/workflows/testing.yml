@@ -28,4 +28,4 @@ jobs:
           pip install -e '.[dev]'
       - name: pytest
         run: |
-          pytest --cov=pymatgen.analysis.diffusion --durations=30 pymatgen
+          pytest --cov=pymatgen.io.mp_archival --durations=30 pymatgen

@@ -1,1 +1,1 @@
-"""pymatgen-analysis-mp_archival provides archival storage tools."""
+"""pymatgen-io-mp_archival provides archival storage tools."""

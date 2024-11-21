@@ -4,13 +4,13 @@ from setuptools import find_namespace_packages, setup
 
 SETUP_PTH = os.path.dirname(os.path.abspath(__file__))
 
-with open(os.path.join(SETUP_PTH, "README.rst")) as f:
+with open(os.path.join(SETUP_PTH, "README.md")) as f:
     desc = f.read()
 
 
 setup(
-    name="pymatgen-analysis-myaddon",
-    packages=find_namespace_packages(include=["pymatgen.analysis.*"]),
+    name="pymatgen-io-mp_archival",
+    packages=find_namespace_packages(include=["pymatgen.io.*"]),
     version="0.0.1",
     install_requires=["pymatgen>=2023.8.10"],
     extras_require={

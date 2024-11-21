@@ -1,4 +1,5 @@
 """Define utility functions."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,7 +7,7 @@ from pathlib import Path
 from monty.os.path import zpath as _monty_zpath
 
 
-def zpath(target_path : str | Path) -> Path:
+def zpath(target_path: str | Path) -> Path:
     """
     Wrap monty's zpath to ensure it always returns a .Path.
 
