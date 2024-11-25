@@ -21,3 +21,17 @@ def zpath(target_path: str | Path) -> Path:
     zip extension if that path exists.
     """
     return Path(_monty_zpath(str(target_path)))
+
+try:
+    from enum import StrEnum
+except ImportError:
+
+    from enum import Enum
+    class StrEnum(str,Enum):
+        """Fallback StrEnum for python < 3.12."""
+        
+        @classmethod
+        def _missing_(cls, value):
+            for member in cls:
+                if member.value.upper() == value.upper():
+                    return member

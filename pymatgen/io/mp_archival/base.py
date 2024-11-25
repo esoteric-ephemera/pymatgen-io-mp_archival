@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import h5py
@@ -11,11 +10,16 @@ import numpy as np
 from numcodecs import Blosc
 import zarr
 
+from pymatgen.core import Structure
+
+from pymatgen.io.mp_archival.utils import StrEnum
+
 if TYPE_CHECKING:
+    from pathlib import Path
     from typing import Any
 
 
-class ArchivalFormat(Enum):
+class ArchivalFormat(StrEnum):
     HDF5 = "h5"
     ZARR = "zarr"
 
@@ -33,6 +37,8 @@ class Archiver:
 
     def __post_init__(self) -> None:
         """Ensure that attributes have correct type."""
+        #for key, value in self.parsed_objects.items():
+        #    setattr(self, key.lower(), value)
 
         if isinstance(self.format, str):
             self.format = ArchivalFormat(self.format)
@@ -40,7 +46,9 @@ class Archiver:
         if self.compression is None:
             if self.format == ArchivalFormat.HDF5:
                 self.compression = {
-                    "compression": 9,
+                    "compression": "gzip",
+                    "compression_opts": 9,
+                    "chunks": True,
                 }
             elif self.format == ArchivalFormat.ZARR:
                 self.compression = {
@@ -51,6 +59,8 @@ class Archiver:
         """Allow accessing parsed objects with dot notation."""
         if name.upper() in self.parsed_objects:
             return self.parsed_objects[name.upper()]
+        elif name.lower() in self.parsed_objects:
+            return self.parsed_objects[name.lower()]
         raise AttributeError(name)
 
     def to_group(self, group: h5py.Group | zarr.Group, group_key: str = "group") -> None:
@@ -70,3 +80,53 @@ class Archiver:
         elif self.format == ArchivalFormat.ZARR:
             with zarr.open(file_name, "w") as zg:
                 self.to_group(zg)
+
+@dataclass
+class StructureArchive(Archiver):
+    """Archive a Structure."""
+
+    #parsed_objects: dict[str, Any] = field(default_factory=lambda: {"structure": None})
+
+    @classmethod
+    def from_file(cls,file_path : str | Path) -> StructureArchive:
+        return cls({"structure": Structure.from_file(file_path)})
+
+    def to_group(self, group: h5py.Group | zarr.Group, group_key: str = "structure") -> None:
+        group.create_group(group_key)
+        group[group_key].attrs["charge"] = self.structure.charge
+        for k, v in self.metadata:
+            group[group_key].attrs[k] = v
+        group[group_key].create_dataset("lattice", data=self.structure.lattice.matrix, **self.compression)
+        group[group_key].create_group("sites")
+        group[f"{group_key}/sites"].create_dataset(
+            "species",
+            data=[site.species_string for site in self.structure.sites],
+            **self.compression,
+        )
+        group[f"{group_key}/sites"].create_dataset(
+            "direct_coordinates",
+            data=[site.frac_coords for site in self.structure.sites],
+            **self.compression,
+        )
+        if len(self.structure.site_properties) > 0.0:
+            group[f"{group_key}/sites"].create_group("properties")
+            for site_prop, prop_vals in self.structure.site_properties.items():
+                group[f"{group_key}/sites/properties"].create_dataset(site_prop, data=prop_vals, **self.compression)
+
+    @staticmethod
+    def from_group(group: h5py.Group | zarr.Group) -> Structure:
+        site_properties = {}
+        if (site_props := group["sites"].get("properties")) is not None:
+            for site_prop in site_props:
+                site_properties[site_prop] = list(site_prop)
+        return Structure(
+            lattice=group["lattice"],
+            species=[
+                ele_bytes.decode("utf8") if isinstance(ele_bytes, bytes) else ele_bytes
+                for ele_bytes in group["sites/species"]
+            ],
+            coords=group["sites/direct_coordinates"],
+            charge=group.attrs["charge"],
+            coords_are_cartesian=False,
+            site_properties=site_properties,
+        )

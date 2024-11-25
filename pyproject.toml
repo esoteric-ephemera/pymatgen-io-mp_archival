@@ -35,7 +35,7 @@ readme = "README.md"
 requires-python = '>=3.9,<3.13'
 
 [project.optional-dependencies]
-dev = ["pre-commit>=2.12.1"]
+dev = ["pre-commit>=2.12.1","ase>=3.23.0"]
 
 tests = ["pytest==8.3.3", "pytest-cov==6.0.0", "types-requests"]
 

@@ -21,7 +21,7 @@ from pymatgen.electronic_structure.dos import CompleteDos, Dos
 from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar, Potcar
 from pymatgen.io.vasp.outputs import Chgcar, Elfcar, Locpot, Vasprun
 
-from pymatgen.io.mp_archival.base import ArchivalFormat, Archiver
+from pymatgen.io.mp_archival.base import ArchivalFormat, Archiver, StructureArchive
 from pymatgen.io.mp_archival.utils import zpath
 
 if TYPE_CHECKING:
@@ -86,10 +86,10 @@ _PMG_OBJ = {
 
 
 @dataclass
-class PoscarArchive(Archiver):
+class PoscarArchive(StructureArchive):
     """Archive a POSCAR."""
 
-    parsed_objects: dict[str, Any] = field(default_factory=lambda: {"POSCAR": None})
+    #parsed_objects: dict[str, Any] = field(default_factory=lambda: {"POSCAR": None})
 
     def __post_init__(self):
         if isinstance(self.parsed_objects["POSCAR"], Structure):
@@ -98,49 +98,15 @@ class PoscarArchive(Archiver):
             self.parsed_objects["POSCAR"] = Poscar.from_file(self.parsed_objects["POSCAR"])
         elif isinstance(self.parsed_objects["POSCAR"], str):
             self.parsed_objects["POSCAR"] = Poscar.from_str(self.parsed_objects["POSCAR"])
+        
+        self.metadata.update({"comment": self.parsed_objects["POSCAR"]["comment"]})
 
         super().__post_init__()
 
-    def to_group(self, group: h5py.Group | zarr.Group, group_key: str = "structure") -> None:
-        structure = self.poscar.structure
-        group.create_group(group_key)
-        group[group_key].attrs["charge"] = 0.0
-        group[group_key].attrs["comment"] = self.poscar.comment
-        group[group_key].create_dataset("lattice", data=structure.lattice.matrix, **self.compression)
-        group[group_key].create_group("sites")
-        group[f"{group_key}/sites"].create_dataset(
-            "species",
-            data=[site.species_string for site in structure.sites],
-            **self.compression,
-        )
-        group[f"{group_key}/sites"].create_dataset(
-            "direct_coordinates",
-            data=[site.frac_coords for site in structure.sites],
-            **self.compression,
-        )
-        if len(structure.site_properties) > 0.0:
-            group[f"{group_key}/sites"].create_group("properties")
-            for site_prop, prop_vals in structure.site_properties.items():
-                group[f"{group_key}/sites/properties"].create_dataset(site_prop, data=prop_vals, **self.compression)
 
     @staticmethod
     def from_group(group: h5py.Group | zarr.Group) -> Poscar:
-        site_properties = {}
-        if (site_props := group["sites"].get("properties")) is not None:
-            for site_prop in site_props:
-                site_properties[site_prop] = list(site_prop)
-        structure = Structure(
-            lattice=group["lattice"],
-            species=[
-                ele_bytes.decode("utf8") if isinstance(ele_bytes, bytes) else ele_bytes
-                for ele_bytes in group["sites/species"]
-            ],
-            coords=group["sites/direct_coordinates"],
-            charge=group.attrs["charge"],
-            coords_are_cartesian=False,
-            site_properties=site_properties,
-        )
-        return Poscar(structure, comment=group.get("comment"))
+        return Poscar(StructureArchive.from_group(group), comment=group.get("comment"))
 
 
 @dataclass
