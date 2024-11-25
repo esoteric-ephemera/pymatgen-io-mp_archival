@@ -96,7 +96,7 @@ class PoscarArchive(StructureArchive):
     def __post_init__(self):
         if isinstance(self.parsed_objects["POSCAR"], Structure):
             self.parsed_objects["POSCAR"] = Poscar(structure=self.parsed_objects["POSCAR"])
-        elif isinstance(self.parsed_objects["POSCAR"], str | Path) and Path(self.parsed_objects["POSCAR"]).exists():
+        elif isinstance(self.parsed_objects["POSCAR"], (str, Path)) and Path(self.parsed_objects["POSCAR"]).exists():
             self.parsed_objects["POSCAR"] = Poscar.from_file(self.parsed_objects["POSCAR"])
         elif isinstance(self.parsed_objects["POSCAR"], str):
             self.parsed_objects["POSCAR"] = Poscar.from_str(self.parsed_objects["POSCAR"])
@@ -115,7 +115,7 @@ class IncarArchive(Archiver):
     # parsed_objects : dict[str,Any] = {"INCAR": None}
 
     def __post_init__(self) -> None:
-        if isinstance(self.parsed_objects["INCAR"], str | Path) and Path(self.parsed_objects["INCAR"]).exists():
+        if isinstance(self.parsed_objects["INCAR"], (str, Path)) and Path(self.parsed_objects["INCAR"]).exists():
             self.parsed_objects["INCAR"] = Incar.from_file(self.parsed_objects["INCAR"])
         elif isinstance(self.parsed_objects["INCAR"], str):
             self.parsed_objects["INCAR"] = Incar.from_str(self.parsed_objects["INCAR"])
@@ -142,7 +142,7 @@ class DosArchive(Archiver):
 
     @classmethod
     def from_vasprun(cls, vasprun: Vasprun | str | Path, **kwargs):
-        if isinstance(vasprun, str | Path) and Path(vasprun).exists():
+        if isinstance(vasprun, (str, Path)) and Path(vasprun).exists():
             vasprun = Vasprun(vasprun)
         return cls(parsed_objects={"DOS": vasprun.complete_dos}, **kwargs)  # type: ignore[union-attr]
 
@@ -301,7 +301,7 @@ class ElectronicStructureArchive(Archiver):
 
     @classmethod
     def from_vasprun(cls, vasprun: str | Path | Vasprun = "vasprun.xml", **kwargs):
-        if isinstance(vasprun, str | Path):
+        if isinstance(vasprun, (str, Path)):
             vasprun = Vasprun(zpath(vasprun))
         return cls(
             parsed_objects={

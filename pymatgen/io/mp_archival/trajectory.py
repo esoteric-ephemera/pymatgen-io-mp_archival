@@ -108,7 +108,7 @@ class TrajArchive(Archiver):
         TrajArchive
         """
 
-        traj: PmgTrajectory = PmgTrajectory.from_file(traj_file) if isinstance(traj_file, str | Path) else traj_file
+        traj: PmgTrajectory = PmgTrajectory.from_file(traj_file) if isinstance(traj_file, (str, Path)) else traj_file
 
         properties = set()
         for idx in range(len(traj)):
@@ -194,7 +194,7 @@ class TrajArchive(Archiver):
 
         archive_was_file = False
         ext = None
-        if isinstance(archive, str | Path):
+        if isinstance(archive, (str, Path)):
             archive_was_file = True
             ext = Path(archive).suffix.split(".")[-1]
             if ext == ArchivalFormat.HDF5:
