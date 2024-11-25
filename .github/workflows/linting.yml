@@ -26,5 +26,4 @@ jobs:
           mypy --namespace-packages --explicit-package-bases pymatgen
       - name: black
         run: |
-          ruff .
-          ruff format .
+          ruff format --check .
