@@ -29,7 +29,6 @@ if TYPE_CHECKING:
 
 
 class TrajectoryProperty(StrEnum):
-
     structure = "structure"
     lattice = "lattice"
     coordinates = "fractional_coordinates"
@@ -74,23 +73,36 @@ class TrajArchive(Archiver):
         }
 
         self.all_lattices_equal = all(
-            np.all(np.abs(self.structure[i].lattice.matrix - self.structure[j].lattice.matrix)) < self.lattice_match_tol
+            np.all(
+                np.abs(
+                    self.structure[i].lattice.matrix - self.structure[j].lattice.matrix
+                )
+            )
+            < self.lattice_match_tol
             for i in range(self.num_steps)
             for j in range(i + 1, self.num_steps)
         )
 
-        if not self.all_lattices_equal and self.parsed_objects.get(TrajectoryProperty.lattice) is None:
+        if (
+            not self.all_lattices_equal
+            and self.parsed_objects.get(TrajectoryProperty.lattice) is None
+        ):
             self.parsed_objects[TrajectoryProperty.lattice] = np.array(
                 [structure.lattice.matrix for structure in self.structure]
             )
 
         if self.parsed_objects.get(TrajectoryProperty.coordinates) is None:
             self.parsed_objects[TrajectoryProperty.coordinates] = np.array(
-                [[site.frac_coords for site in structure] for structure in self.structure]
+                [
+                    [site.frac_coords for site in structure]
+                    for structure in self.structure
+                ]
             )
 
     @classmethod
-    def from_pymatgen_trajectory(cls, traj_file: str | Path | PmgTrajectory, **kwargs) -> TrajArchive:
+    def from_pymatgen_trajectory(
+        cls, traj_file: str | Path | PmgTrajectory, **kwargs
+    ) -> TrajArchive:
         """
         Instantite a TrajArchive from a pymatgen Trajectory.
 
@@ -108,14 +120,20 @@ class TrajArchive(Archiver):
         TrajArchive
         """
 
-        traj: PmgTrajectory = PmgTrajectory.from_file(traj_file) if isinstance(traj_file, (str, Path)) else traj_file
+        traj: PmgTrajectory = (
+            PmgTrajectory.from_file(traj_file)
+            if isinstance(traj_file, (str, Path))
+            else traj_file
+        )
 
         properties = set()
         for idx in range(len(traj)):
             properties.update(set(traj.frame_properties[idx]))
             properties.update(set(traj[idx].site_properties))
 
-        parsed_objects: dict[TrajectoryProperty | str, Any] = {k: [] for k in ["structure"] + list(properties)}
+        parsed_objects: dict[TrajectoryProperty | str, Any] = {
+            k: [] for k in ["structure"] + list(properties)
+        }
 
         for idx, structure in enumerate(traj):
             parsed_objects["structure"].append(structure)
@@ -132,7 +150,10 @@ class TrajArchive(Archiver):
 
     @classmethod
     def from_task_doc(
-        cls, task_doc: TaskDoc, properties: list[TrajectoryProperty] | None = None, **kwargs
+        cls,
+        task_doc: TaskDoc,
+        properties: list[TrajectoryProperty] | None = None,
+        **kwargs,
     ) -> TrajArchive:
         """
         Instantite a TrajArchive from an emmet-core TaskDoc.
@@ -152,7 +173,9 @@ class TrajArchive(Archiver):
         ----------
         TrajArchive
         """
-        properties = properties or [TrajectoryProperty[k] for k in ("structure", "energy", "forces", "stress")]
+        properties = properties or [
+            TrajectoryProperty[k] for k in ("structure", "energy", "forces", "stress")
+        ]
         translation = {"energy": "e_0_energy"}
 
         site_properties = set()
@@ -160,7 +183,9 @@ class TrajArchive(Archiver):
             for ionic_step in cr.output.ionic_steps:
                 site_properties.update(set(ionic_step.structure.site_properties))
 
-        parsed_objects: dict[TrajectoryProperty | str, Any] = {k: [] for k in properties + list(site_properties)}
+        parsed_objects: dict[TrajectoryProperty | str, Any] = {
+            k: [] for k in properties + list(site_properties)
+        }
 
         # un-reverse the calcs_reversed
         for cr in task_doc.calcs_reversed[::-1]:
@@ -168,7 +193,9 @@ class TrajArchive(Archiver):
                 for k in properties:
                     parsed_objects[k].append(getattr(ionic_step, translation.get(k, k)))
                 for k in site_properties:
-                    parsed_objects[k].append(ionic_step.structure.site_properties.get(k))
+                    parsed_objects[k].append(
+                        ionic_step.structure.site_properties.get(k)
+                    )
 
         return cls(parsed_objects, **kwargs)
 
@@ -235,7 +262,12 @@ class TrajArchive(Archiver):
                 parsed_objects[prop] = np.array(group["trajectory"][:, block[0]])
             else:
                 parsed_objects[prop] = np.array(
-                    [np.array(row[block[0] : block[1] + 1]).reshape(tuple(ranks[prop])) for row in group["trajectory"]]
+                    [
+                        np.array(row[block[0] : block[1] + 1]).reshape(
+                            tuple(ranks[prop])
+                        )
+                        for row in group["trajectory"]
+                    ]
                 )
 
         if archive_was_file and ext == ArchivalFormat.HDF5:
@@ -254,7 +286,9 @@ class TrajArchive(Archiver):
                     running_sites.remove(idx)
                     break
 
-    def to_group(self, group: h5py.Group | zarr.Group, group_key: str | None = None) -> None:
+    def to_group(
+        self, group: h5py.Group | zarr.Group, group_key: str | None = None
+    ) -> None:
         """Append data to an existing HDF5-like file group."""
 
         if group_key is not None:
@@ -289,16 +323,25 @@ class TrajArchive(Archiver):
         columns = []
         columnar_data = np.zeros((self.num_steps, columnar_data_rank))
         iprop = 0
-        for prop in [_prop for _prop in TrajectoryProperty if _prop != TrajectoryProperty.structure]:
+        for prop in [
+            _prop
+            for _prop in TrajectoryProperty
+            if _prop != TrajectoryProperty.structure
+        ]:
             ncol = np.prod(self._typing[prop]).astype(int)
             if (prop_data := self.parsed_objects.get(prop)) is None:
                 continue
-            columnar_data[:, iprop : iprop + ncol] = [np.ravel(prop_data_step) for prop_data_step in prop_data]
+            columnar_data[:, iprop : iprop + ncol] = [
+                np.ravel(prop_data_step) for prop_data_step in prop_data
+            ]
             unraveled_idx = np.unravel_index(list(range(ncol)), self._typing[prop])
             if len(unraveled_idx) == 1:
                 columns += [f"{prop}-{idx}" for idx in range(ncol)]
             elif len(unraveled_idx) == 2:
-                columns += [f"{prop}-{unraveled_idx[0][idx]}-{unraveled_idx[1][idx]}" for idx in range(ncol)]
+                columns += [
+                    f"{prop}-{unraveled_idx[0][idx]}-{unraveled_idx[1][idx]}"
+                    for idx in range(ncol)
+                ]
             iprop += ncol
 
         dataframe = pd.DataFrame(
@@ -320,7 +363,9 @@ class TrajArchive(Archiver):
         return dataframe
 
     @classmethod
-    def to_pymatgen_trajectory(cls, file_name: str | Path, group_key: str | None = None) -> PmgTrajectory:
+    def to_pymatgen_trajectory(
+        cls, file_name: str | Path, group_key: str | None = None
+    ) -> PmgTrajectory:
         """Create a pymatgen Trajectory from an archive.
 
         Parameters
@@ -336,16 +381,25 @@ class TrajArchive(Archiver):
         pymatgen.core.trajectory.Trajectory object.
         """
 
-        data: dict[str | TrajectoryProperty, Any] = cls.to_dict(file_name, group_key=group_key)
+        data: dict[str | TrajectoryProperty, Any] = cls.to_dict(
+            file_name, group_key=group_key
+        )
         num_steps = len(data["fractional_coordinates"])
         if data["constant_lattice"]:
             structures = [
-                Structure(data["lattice"], data["species"], coords, coords_are_cartesian=False)
+                Structure(
+                    data["lattice"], data["species"], coords, coords_are_cartesian=False
+                )
                 for coords in data["fractional_coordinates"]
             ]
         else:
             structures = [
-                Structure(data["lattice"][idx], data["species"], coords, coords_are_cartesian=False)
+                Structure(
+                    data["lattice"][idx],
+                    data["species"],
+                    coords,
+                    coords_are_cartesian=False,
+                )
                 for idx, coords in enumerate(data["fractional_coordinates"])
             ]
 
@@ -353,7 +407,8 @@ class TrajArchive(Archiver):
             {
                 k.value: data[k][idx]
                 for k in TrajectoryProperty
-                if k in data and k not in ("lattice", "fractional_coordinates", "structure")
+                if k in data
+                and k not in ("lattice", "fractional_coordinates", "structure")
             }
             for idx in range(num_steps)
         ]
@@ -366,7 +421,10 @@ class TrajArchive(Archiver):
 
     @classmethod
     def to_ase_trajectory(
-        cls, file_name: str | Path, ase_traj_file: str | Path | None = None, group_key: str | None = None
+        cls,
+        file_name: str | Path,
+        ase_traj_file: str | Path | None = None,
+        group_key: str | None = None,
     ) -> AseTrajReader:
         """
         Create an ASE Trajectory from an archive.
@@ -387,7 +445,9 @@ class TrajArchive(Archiver):
         """
 
         if AseTrajReader is None:
-            raise ImportError("You must install ASE to use the ASE trajectory functionality of this class.")
+            raise ImportError(
+                "You must install ASE to use the ASE trajectory functionality of this class."
+            )
 
         from tempfile import NamedTemporaryFile
         from ase import Atoms
@@ -413,7 +473,9 @@ class TrajArchive(Archiver):
                     if k in data
                 },
             )
-            with AseTrajectory(ase_traj_file, "a" if idx > 0 else "w", atoms=atoms) as _traj_file:
+            with AseTrajectory(
+                ase_traj_file, "a" if idx > 0 else "w", atoms=atoms
+            ) as _traj_file:
                 _traj_file.write()
 
         return AseTrajectory(ase_traj_file, "r")

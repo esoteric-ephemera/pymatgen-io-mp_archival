@@ -31,7 +31,9 @@ if TYPE_CHECKING:
     from pymatgen.io.vasp.outputs import VolumetricData
 
 _VASP_INPUT_FILES = ["INCAR", "KPOINTS", "KPOINTS_OPT", "POSCAR", "POTCAR"]
-_VASP_VOLUMETRIC_FILES = ["CHGCAR"] + [f"AECCAR{i}" for i in range(3)] + ["ELFCAR", "LOCPOT"]
+_VASP_VOLUMETRIC_FILES = (
+    ["CHGCAR"] + [f"AECCAR{i}" for i in range(3)] + ["ELFCAR", "LOCPOT"]
+)
 _VASP_OUTPUT_FILES = ["EIGENVAL", "DOSCAR", "OSZICAR", "OUTCAR", "vasprun.xml"]
 
 _RAW_DATA_HIERARCHY = {
@@ -95,11 +97,20 @@ class PoscarArchive(StructureArchive):
 
     def __post_init__(self):
         if isinstance(self.parsed_objects["POSCAR"], Structure):
-            self.parsed_objects["POSCAR"] = Poscar(structure=self.parsed_objects["POSCAR"])
-        elif isinstance(self.parsed_objects["POSCAR"], (str, Path)) and Path(self.parsed_objects["POSCAR"]).exists():
-            self.parsed_objects["POSCAR"] = Poscar.from_file(self.parsed_objects["POSCAR"])
+            self.parsed_objects["POSCAR"] = Poscar(
+                structure=self.parsed_objects["POSCAR"]
+            )
+        elif (
+            isinstance(self.parsed_objects["POSCAR"], (str, Path))
+            and Path(self.parsed_objects["POSCAR"]).exists()
+        ):
+            self.parsed_objects["POSCAR"] = Poscar.from_file(
+                self.parsed_objects["POSCAR"]
+            )
         elif isinstance(self.parsed_objects["POSCAR"], str):
-            self.parsed_objects["POSCAR"] = Poscar.from_str(self.parsed_objects["POSCAR"])
+            self.parsed_objects["POSCAR"] = Poscar.from_str(
+                self.parsed_objects["POSCAR"]
+            )
 
         self.metadata.update({"comment": self.parsed_objects["POSCAR"]["comment"]})
 
@@ -115,7 +126,10 @@ class IncarArchive(Archiver):
     # parsed_objects : dict[str,Any] = {"INCAR": None}
 
     def __post_init__(self) -> None:
-        if isinstance(self.parsed_objects["INCAR"], (str, Path)) and Path(self.parsed_objects["INCAR"]).exists():
+        if (
+            isinstance(self.parsed_objects["INCAR"], (str, Path))
+            and Path(self.parsed_objects["INCAR"]).exists()
+        ):
             self.parsed_objects["INCAR"] = Incar.from_file(self.parsed_objects["INCAR"])
         elif isinstance(self.parsed_objects["INCAR"], str):
             self.parsed_objects["INCAR"] = Incar.from_str(self.parsed_objects["INCAR"])
@@ -137,7 +151,9 @@ class DosArchive(Archiver):
 
     def __post_init__(self) -> None:
         if isinstance(self.parsed_objects["DOS"], dict):
-            self.parsed_objects["DOS"] = CompleteDos.from_dict(self.parsed_objects["DOS"])
+            self.parsed_objects["DOS"] = CompleteDos.from_dict(
+                self.parsed_objects["DOS"]
+            )
         super().__post_init__()
 
     @classmethod
@@ -150,7 +166,9 @@ class DosArchive(Archiver):
     def from_parsed_data(cls, dos_path: str | Path, **kwargs):
         dos_data = loadfn(dos_path)
         metadata = {k: v for k, v in dos_data.items() if k != "data"}
-        return cls(parsed_objects={"DOS": dos_data["data"]}, metadata=metadata, **kwargs)
+        return cls(
+            parsed_objects={"DOS": dos_data["data"]}, metadata=metadata, **kwargs
+        )
 
     def to_group(self, group: h5py.Group, group_key: str = "DOS") -> None:
         group.create_group(group_key)
@@ -158,7 +176,9 @@ class DosArchive(Archiver):
         for k, v in (self.metadata or {}).items():
             group[group_key].attrs[k] = str(v) if isinstance(v, datetime) else v
 
-        PoscarArchive(parsed_objects={"POSCAR": self.dos.structure}, format=self.format).to_group(group[group_key])
+        PoscarArchive(
+            parsed_objects={"POSCAR": self.dos.structure}, format=self.format
+        ).to_group(group[group_key])
 
         spin_idxs = list(self.dos.densities)
 
@@ -180,7 +200,10 @@ class DosArchive(Archiver):
             data=[
                 "energies",
                 *[f"total-{spin}" for spin in spin_idxs],
-                *["pdos-" + "-".join([str(idx) for idx in comp_idx]) for comp_idx in pdos_idxs],
+                *[
+                    "pdos-" + "-".join([str(idx) for idx in comp_idx])
+                    for comp_idx in pdos_idxs
+                ],
             ],
             **self.compression,
         )
@@ -240,7 +263,9 @@ class BandStructureArchive(Archiver):
 
     def __post_init__(self) -> None:
         if isinstance(self.parsed_objects["BS"], dict):
-            self.parsed_objects["BS"] = BandStructureSymmLine.from_dict(self.parsed_objects["BS"])
+            self.parsed_objects["BS"] = BandStructureSymmLine.from_dict(
+                self.parsed_objects["BS"]
+            )
 
         super().__post_init__()
 
@@ -253,14 +278,18 @@ class BandStructureArchive(Archiver):
             **kwargs,
         )
 
-    def to_group(self, group: h5py.Group | zarr.Group, group_key: str = "group") -> None:
+    def to_group(
+        self, group: h5py.Group | zarr.Group, group_key: str = "group"
+    ) -> None:
         group.create_group("band_structure")
         group[group_key].attrs["efermi"] = self.bs.efermi
         group[group_key].attrs["num_bands"] = self.bs.nb_bands
         for k, v in (self.metadata or {}).items():
             group[group_key].attrs[k] = str(v) if isinstance(v, datetime) else v
 
-        bs_data = np.zeros((3 + len(self.bs.bands) * self.bs.nb_bands, len(self.bs.kpoints)))
+        bs_data = np.zeros(
+            (3 + len(self.bs.bands) * self.bs.nb_bands, len(self.bs.kpoints))
+        )
         bs_data[:3, :] = np.array([kpt.frac_coords for kpt in self.bs.kpoints]).T
         idxs = ["kx", "ky", "kz"]
 
@@ -282,7 +311,9 @@ class BandStructureArchive(Archiver):
             dtype=self.float_dtype,
             **self.compression,
         )
-        PoscarArchive({"POSCAR": self.bs.structure}, format=self.format).to_group(group[group_key])
+        PoscarArchive({"POSCAR": self.bs.structure}, format=self.format).to_group(
+            group[group_key]
+        )
 
         if (bs_proj := self.bs.projections) is not None:
             group[group_key].create_group("projections")
@@ -313,7 +344,10 @@ class ElectronicStructureArchive(Archiver):
 
     @classmethod
     def from_task_doc(cls, task_doc: TaskDoc, **kwargs):
-        es_objs = {obj_name: task_doc.vasp_objects.get(VaspObject[obj_name]) for obj_name in ("DOS", "BANDSTRUCTURE")}
+        es_objs = {
+            obj_name: task_doc.vasp_objects.get(VaspObject[obj_name])
+            for obj_name in ("DOS", "BANDSTRUCTURE")
+        }
         if not all(obj is not None for obj in es_objs.values()):
             raise UserWarning(
                 f"Missing {', '.join([obj_name for obj_name, obj in es_objs.items() if obj is None])} data!"
@@ -330,9 +364,13 @@ class ElectronicStructureArchive(Archiver):
     ) -> None:
         group.create_group(group_key)
         if self.dos is not None:
-            DosArchive(parsed_objects={"DOS": self.dos}, metadata=self.metadata).to_group(group[group_key])
+            DosArchive(
+                parsed_objects={"DOS": self.dos}, metadata=self.metadata
+            ).to_group(group[group_key])
         if self.bs is not None:
-            BandStructureArchive(parsed_objects={"BS": self.bs}, metadata=self.metadata).to_group(group[group_key])
+            BandStructureArchive(
+                parsed_objects={"BS": self.bs}, metadata=self.metadata
+            ).to_group(group[group_key])
 
 
 @dataclass
@@ -350,7 +388,9 @@ class VolumetricArchive(Archiver):
                         _,
                     ) = self.parse_augmentation_data(data_aug_subset)
 
-            self.parsed_objects[file_name]["augmentation"] = self.parsed_objects[file_name]["augmentation"] or None
+            self.parsed_objects[file_name]["augmentation"] = (
+                self.parsed_objects[file_name]["augmentation"] or None
+            )
 
         super().__post_init__()
 
@@ -368,7 +408,9 @@ class VolumetricArchive(Archiver):
         return cls(parsed_objects=parsed_objects, metadata=metadata, **kwargs)
 
     @staticmethod
-    def parse_augmentation_data(aug_data: list[str], pad_value=None, pad_to_rank: int | None = None):
+    def parse_augmentation_data(
+        aug_data: list[str], pad_value=None, pad_to_rank: int | None = None
+    ):
         aug_data_parsed: list | np.ndarray = []
         data = None
         for _line in aug_data:
@@ -391,7 +433,9 @@ class VolumetricArchive(Archiver):
             pad_to_rank = pad_to_rank or max(ranks)
             for idx, row in enumerate(aug_data_parsed):
                 if len(row) < pad_to_rank:
-                    aug_data_parsed[idx] = np.array(list(row) + [pad_value for _ in range(pad_to_rank - len(row))])
+                    aug_data_parsed[idx] = np.array(
+                        list(row) + [pad_value for _ in range(pad_to_rank - len(row))]
+                    )
             aug_data_parsed = np.array(aug_data_parsed)
 
         return aug_data_parsed, ranks
@@ -408,14 +452,20 @@ class VolumetricArchive(Archiver):
             if k != "file_paths":
                 group.attrs[k] = v
 
-        PoscarArchive(parsed_objects={"POSCAR": vobj["object"].poscar}, format=self.format).to_group(group)
+        PoscarArchive(
+            parsed_objects={"POSCAR": vobj["object"].poscar}, format=self.format
+        ).to_group(group)
 
         for file_name, entry in self.parsed_objects.items():
             group.create_group(file_name)
-            if (fpath := self.metadata.get("file_paths", {}).get(file_name)) is not None:
+            if (
+                fpath := self.metadata.get("file_paths", {}).get(file_name)
+            ) is not None:
                 group[file_name].attrs["path"] = str(fpath)
             for chg_key, data in entry["object"].data.items():
-                group[file_name].create_dataset(chg_key, data=data, dtype=self.float_dtype, **self.compression)
+                group[file_name].create_dataset(
+                    chg_key, data=data, dtype=self.float_dtype, **self.compression
+                )
 
             if entry["augmentation"] is not None:
                 group[file_name].create_group("augmentation")
@@ -435,7 +485,6 @@ class VolumetricArchive(Archiver):
         files_to_retrieve=_VASP_VOLUMETRIC_FILES,
         fmt: str | ArchivalFormat | None = None,
     ) -> dict[str, VolumetricData]:
-
         if fmt is None:
             file_ext = "".join(Path(archive_name).suffixes)
             for _fmt in ArchivalFormat:
@@ -469,7 +518,9 @@ class VolumetricArchive(Archiver):
                         "diff",
                     ):
                         if (_data := aug_data.get(k)) is not None:
-                            data_aug[k] = [np.array(aug_chgs) for aug_chgs in _data.values()]
+                            data_aug[k] = [
+                                np.array(aug_chgs) for aug_chgs in _data.values()
+                            ]
 
                 kwargs: dict[str, Any] = {"poscar": poscar, "data": data}
                 if all(f not in file_name.upper() for f in ("ELFCAR", "LOCPOT")):
@@ -509,9 +560,14 @@ class RawArchive(Archiver):
     def chunk_string(instr: str, str_len: int):
         nrem = len(instr) % str_len
         nchunk = (len(instr) - nrem) // str_len
-        return [instr[i * str_len : min(len(instr), (i + 1) * str_len)] for i in range(nchunk + 1)]
+        return [
+            instr[i * str_len : min(len(instr), (i + 1) * str_len)]
+            for i in range(nchunk + 1)
+        ]
 
-    def to_group(self, group: h5py.Group | zarr.Group, group_key: str | None = None) -> None:
+    def to_group(
+        self, group: h5py.Group | zarr.Group, group_key: str | None = None
+    ) -> None:
         if group_key is not None:
             group.create_group(group_key)
             group = group[group_key]
@@ -527,6 +583,10 @@ class RawArchive(Archiver):
                 if self.format == ArchivalFormat.HDF5:
                     kwargs.update(dtype=h5py.string_dtype(length=len(rawf)))
 
-                group[calc_type].create_dataset(file_name, data=[rawf], shape=1, **kwargs)
-                if (fpath := self.metadata.get("file_paths", {}).get(file_name)) is not None:
+                group[calc_type].create_dataset(
+                    file_name, data=[rawf], shape=1, **kwargs
+                )
+                if (
+                    fpath := self.metadata.get("file_paths", {}).get(file_name)
+                ) is not None:
                     group[calc_type][file_name].attrs[f"{file_name}_path"] = str(fpath)

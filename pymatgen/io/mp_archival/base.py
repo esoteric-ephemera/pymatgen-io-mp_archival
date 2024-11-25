@@ -66,7 +66,9 @@ class Archiver:
             return self.parsed_objects[name.lower()]
         raise AttributeError(name)
 
-    def to_group(self, group: h5py.Group | zarr.Group, group_key: str = "group") -> None:
+    def to_group(
+        self, group: h5py.Group | zarr.Group, group_key: str = "group"
+    ) -> None:
         """Append data to an existing HDF5-like file group."""
         raise NotImplementedError
 
@@ -95,13 +97,17 @@ class StructureArchive(Archiver):
     def from_file(cls, file_path: str | Path) -> StructureArchive:
         return cls({"structure": Structure.from_file(file_path)})
 
-    def to_group(self, group: h5py.Group | zarr.Group, group_key: str = "structure") -> None:
+    def to_group(
+        self, group: h5py.Group | zarr.Group, group_key: str = "structure"
+    ) -> None:
         group.create_group(group_key)
         group[group_key].attrs["charge"] = self.structure.charge
         if self.metadata is not None:
             for k, v in self.metadata.items():
                 group[group_key].attrs[k] = v
-        group[group_key].create_dataset("lattice", data=self.structure.lattice.matrix, **self.compression)
+        group[group_key].create_dataset(
+            "lattice", data=self.structure.lattice.matrix, **self.compression
+        )
         group[group_key].create_group("sites")
         group[f"{group_key}/sites"].create_dataset(
             "species",
@@ -116,7 +122,9 @@ class StructureArchive(Archiver):
         if len(self.structure.site_properties) > 0.0:
             group[f"{group_key}/sites"].create_group("properties")
             for site_prop, prop_vals in self.structure.site_properties.items():
-                group[f"{group_key}/sites/properties"].create_dataset(site_prop, data=prop_vals, **self.compression)
+                group[f"{group_key}/sites/properties"].create_dataset(
+                    site_prop, data=prop_vals, **self.compression
+                )
 
     @staticmethod
     def from_group(group: h5py.Group | zarr.Group) -> Structure:
