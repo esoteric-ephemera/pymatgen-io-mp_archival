@@ -25,6 +25,7 @@ dependencies = [
   "numpy",
   "h5py",
   "zarr",
+  "emmet-core>=0.84.2"
 ]
 description = "Tools for archiving VASP raw and parsed calculations on conventional file systems and cloud storage."
 dynamic = ["version"]
