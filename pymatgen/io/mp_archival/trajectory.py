@@ -12,9 +12,9 @@ import pandas as pd
 import zarr
 
 try:
-    from ase.io import Trajectory as AseTrajectory
+    from ase.io.trajectory import TrajectoryReader as AseTrajReader
 except ImportError:
-    AseTrajectory
+    AseTrajReader = None  # type: ignore[misc]
 
 from pymatgen.core import Structure
 from pymatgen.core.trajectory import Trajectory as PmgTrajectory
@@ -108,24 +108,25 @@ class TrajArchive(Archiver):
         TrajArchive
         """
 
-        traj: PmgTrajectory = (
-            PmgTrajectory.from_file(traj_file) if isinstance(traj_file, str | Path) else traj_file.copy()
-        )
+        traj: PmgTrajectory = PmgTrajectory.from_file(traj_file) if isinstance(traj_file, str | Path) else traj_file
 
         properties = set()
         for idx in range(len(traj)):
             properties.update(set(traj.frame_properties[idx]))
-            properties.update(set(traj.site_properties[idx]))
+            properties.update(set(traj[idx].site_properties))
 
         parsed_objects: dict[TrajectoryProperty | str, Any] = {k: [] for k in ["structure"] + list(properties)}
 
         for idx, structure in enumerate(traj):
             parsed_objects["structure"].append(structure)
             for k in properties:
-                if (prop := traj.site_properties[idx].get(k)) is not None:
+                if (prop := traj[idx].site_properties.get(k)) is not None:  # type: ignore[union-attr]
                     parsed_objects[k].append(prop)
                 elif (prop := traj.frame_properties[idx].get(k)) is not None:
                     parsed_objects[k].append(prop)
+                else:
+                    # needed to avoid ragged arrays
+                    parsed_objects[k].append(None)
 
         return cls(parsed_objects, **kwargs)
 
@@ -283,13 +284,13 @@ class TrajArchive(Archiver):
         columnar_data_rank = 0
         for prop, rank in self._typing.items():
             if self.parsed_objects.get(prop) is not None:
-                columnar_data_rank += np.prod(rank)
+                columnar_data_rank += np.prod(rank).astype(int)
 
         columns = []
         columnar_data = np.zeros((self.num_steps, columnar_data_rank))
         iprop = 0
         for prop in [_prop for _prop in TrajectoryProperty if _prop != TrajectoryProperty.structure]:
-            ncol = np.prod(self._typing[prop])
+            ncol = np.prod(self._typing[prop]).astype(int)
             if (prop_data := self.parsed_objects.get(prop)) is None:
                 continue
             columnar_data[:, iprop : iprop + ncol] = [np.ravel(prop_data_step) for prop_data_step in prop_data]
@@ -366,7 +367,7 @@ class TrajArchive(Archiver):
     @classmethod
     def to_ase_trajectory(
         cls, file_name: str | Path, ase_traj_file: str | Path | None = None, group_key: str | None = None
-    ) -> AseTrajectory:
+    ) -> AseTrajReader:
         """
         Create an ASE Trajectory from an archive.
 
@@ -385,12 +386,13 @@ class TrajArchive(Archiver):
         ase.io.Trajectory object.
         """
 
-        if AseTrajectory is None:
+        if AseTrajReader is None:
             raise ImportError("You must install ASE to use the ASE trajectory functionality of this class.")
 
         from tempfile import NamedTemporaryFile
         from ase import Atoms
         from ase.calculators.singlepoint import SinglePointCalculator
+        from ase.io import Trajectory as AseTrajectory
 
         ase_traj_file = ase_traj_file or NamedTemporaryFile().name
 

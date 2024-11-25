@@ -26,6 +26,8 @@ from pymatgen.io.mp_archival.utils import zpath
 
 if TYPE_CHECKING:
     from typing import Any
+
+    from pymatgen.core.sites import PeriodicSite
     from pymatgen.io.vasp.outputs import VolumetricData
 
 _VASP_INPUT_FILES = ["INCAR", "KPOINTS", "KPOINTS_OPT", "POSCAR", "POTCAR"]
@@ -104,7 +106,7 @@ class PoscarArchive(StructureArchive):
         super().__post_init__()
 
     @staticmethod
-    def from_group(group: h5py.Group | zarr.Group) -> Poscar:
+    def from_group(group: h5py.Group | zarr.Group) -> Poscar:  # type: ignore[override]
         return Poscar(StructureArchive.from_group(group), comment=group.get("comment"))
 
 
@@ -200,7 +202,8 @@ class DosArchive(Archiver):
     def from_group(group: h5py.Group) -> CompleteDos:
         energies = None
         densities: dict[Spin, np.ndarray] = {}
-        pdos: dict[int, dict[Orbital, dict[Spin, np.ndarray]]] = {}  # hahahahaha typing
+        pdos: dict[PeriodicSite, dict[Orbital, dict[Spin, np.ndarray]]] = {}
+        structure = PoscarArchive.from_group(group["POSCAR"]).structure
         for idx, key in enumerate(group["index"]):
             key = key.decode()
             col = np.array(group["complete_dos"][idx])
@@ -210,17 +213,17 @@ class DosArchive(Archiver):
                 densities[Spin(int(key.split("-")[-1]))] = col
             elif "pdos" in key:
                 site_idx, orbital, spin = key.split("-")[1:]
-                site_idx = int(site_idx)
+                site = structure[int(site_idx)]
                 orbital = Orbital[orbital]
-                if site_idx not in pdos:
-                    pdos[site_idx] = {}
-                if orbital not in pdos[site_idx]:
-                    pdos[site_idx][orbital] = {}
-                pdos[site_idx][orbital][Spin(int(spin))] = col
+                if site not in pdos:
+                    pdos[site] = {}
+                if orbital not in pdos[site]:
+                    pdos[site][orbital] = {}
+                pdos[site][orbital][Spin(int(spin))] = col
 
         total_dos = Dos(
             efermi=group.attrs["efermi"],
-            energies=energies,
+            energies=energies.tolist(),
             densities=densities,
         )
 
@@ -360,16 +363,16 @@ class VolumetricArchive(Archiver):
             file_path = zpath(calc_dir / file_name)
             if file_path.exists():
                 metadata["file_paths"][file_name] = file_path  # type: ignore[index]
-                parsed_objects[file_name] = _PMG_OBJ[file_name].from_file(file_path)
+                parsed_objects[file_name] = _PMG_OBJ[file_name].from_file(file_path)  # type: ignore[attr-defined]
 
         return cls(parsed_objects=parsed_objects, metadata=metadata, **kwargs)
 
     @staticmethod
-    def parse_augmentation_data(aug_data, pad_value=None, pad_to_rank: int | None = None):
-        aug_data_parsed: list[list] | np.ndarray = []
+    def parse_augmentation_data(aug_data: list[str], pad_value=None, pad_to_rank: int | None = None):
+        aug_data_parsed: list | np.ndarray = []
         data = None
-        for line in aug_data:
-            line = line.strip().split()
+        for _line in aug_data:
+            line = _line.strip().split()
             if any("augmentation" in ele for ele in line):
                 rank = int(line[-1])
                 if data is not None:

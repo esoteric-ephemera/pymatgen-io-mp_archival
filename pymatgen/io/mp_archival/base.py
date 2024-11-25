@@ -33,7 +33,7 @@ class Archiver:
     metadata: dict[str, Any] | None = None
     format: ArchivalFormat | str = ArchivalFormat.HDF5
     compression: dict | None = None
-    float_dtype: np.dtype = np.float32
+    float_dtype: str | np.dtype = "float32"
 
     def __post_init__(self) -> None:
         """Ensure that attributes have correct type."""
@@ -54,6 +54,9 @@ class Archiver:
                 self.compression = {
                     "compressor": Blosc(clevel=9),
                 }
+
+        if isinstance(self.float_dtype, str):
+            self.float_dtype = np.dtype(self.float_dtype)
 
     def __getattr__(self, name: Any) -> Any:
         """Allow accessing parsed objects with dot notation."""
