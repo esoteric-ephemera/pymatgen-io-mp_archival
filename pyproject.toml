@@ -38,8 +38,6 @@ requires-python = '>=3.9,<3.13'
 ase = ["ase>=3.23.0"]
 dev = ["pre-commit>=2.12.1","pytest-cov>=5.0.0", "pytest>=8.2.2"]
 
-tests = ["pytest==8.3.3", "pytest-cov==6.0.0", "types-requests"]
-
 [tool.setuptools.dynamic]
 readme = { file = ["README.md"] }
 
