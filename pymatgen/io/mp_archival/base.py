@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import h5py
@@ -37,7 +37,7 @@ class Archiver:
 
     def __post_init__(self) -> None:
         """Ensure that attributes have correct type."""
-        #for key, value in self.parsed_objects.items():
+        # for key, value in self.parsed_objects.items():
         #    setattr(self, key.lower(), value)
 
         if isinstance(self.format, str):
@@ -72,7 +72,7 @@ class Archiver:
 
         if len(file_split := file_name.split(".")) > 1:
             file_name = ".".join(file_split[:-1])
-        file_name += f".{self.format.value}"  # type: ignore[union-attr]
+        file_name += f".{self.format.value}"  # type: ignore[union-attr,attr-defined]
 
         if self.format == ArchivalFormat.HDF5:
             with h5py.File(file_name, "w") as hf5:
@@ -81,21 +81,23 @@ class Archiver:
             with zarr.open(file_name, "w") as zg:
                 self.to_group(zg)
 
+
 @dataclass
 class StructureArchive(Archiver):
     """Archive a Structure."""
 
-    #parsed_objects: dict[str, Any] = field(default_factory=lambda: {"structure": None})
+    # parsed_objects: dict[str, Any] = field(default_factory=lambda: {"structure": None})
 
     @classmethod
-    def from_file(cls,file_path : str | Path) -> StructureArchive:
+    def from_file(cls, file_path: str | Path) -> StructureArchive:
         return cls({"structure": Structure.from_file(file_path)})
 
     def to_group(self, group: h5py.Group | zarr.Group, group_key: str = "structure") -> None:
         group.create_group(group_key)
         group[group_key].attrs["charge"] = self.structure.charge
-        for k, v in self.metadata:
-            group[group_key].attrs[k] = v
+        if self.metadata is not None:
+            for k, v in self.metadata.items():
+                group[group_key].attrs[k] = v
         group[group_key].create_dataset("lattice", data=self.structure.lattice.matrix, **self.compression)
         group[group_key].create_group("sites")
         group[f"{group_key}/sites"].create_dataset(

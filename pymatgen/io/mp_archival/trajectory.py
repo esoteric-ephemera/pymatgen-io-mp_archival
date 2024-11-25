@@ -1,4 +1,5 @@
 """High-efficiency archival format for trajectories."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,7 +13,7 @@ import zarr
 
 try:
     from ase.io import Trajectory as AseTrajectory
-except ImportError as exc:
+except ImportError:
     AseTrajectory
 
 from pymatgen.core import Structure
@@ -22,12 +23,13 @@ from pymatgen.io.mp_archival.base import Archiver, ArchivalFormat
 from pymatgen.io.mp_archival.utils import StrEnum
 
 if TYPE_CHECKING:
-    
+    from typing import Any
+
     from emmet.core.tasks import TaskDoc
 
 
 class TrajectoryProperty(StrEnum):
-    
+
     structure = "structure"
     lattice = "lattice"
     coordinates = "fractional_coordinates"
@@ -38,6 +40,7 @@ class TrajectoryProperty(StrEnum):
     magmom = "magmom"
     charge = "charge"
 
+
 @dataclass
 class TrajArchive(Archiver):
     """
@@ -47,8 +50,8 @@ class TrajArchive(Archiver):
     pandas DataFrame, pymatgen Trajectory, and ASE trajectory.
     """
 
-    lattice_match_tol : float = 1.e-6
-    
+    lattice_match_tol: float = 1.0e-6
+
     def __post_init__(self) -> None:
         """Ensure that structure information is included and parsed."""
         super().__post_init__()
@@ -60,38 +63,37 @@ class TrajArchive(Archiver):
         self.num_steps = len(self.structure)
 
         self._typing = {
-            TrajectoryProperty.lattice : (3,3),
-            TrajectoryProperty.coordinates : (self.num_sites,3),
-            TrajectoryProperty.energy : (1,),
-            TrajectoryProperty.forces : (self.num_sites,3),
-            TrajectoryProperty.stress : (3,3),
-            TrajectoryProperty.stress_voigt : (6,),
-            TrajectoryProperty.magmom : (self.num_sites,),
-            TrajectoryProperty.charge : (self.num_sites,),
+            TrajectoryProperty.lattice: (3, 3),
+            TrajectoryProperty.coordinates: (self.num_sites, 3),
+            TrajectoryProperty.energy: (1,),
+            TrajectoryProperty.forces: (self.num_sites, 3),
+            TrajectoryProperty.stress: (3, 3),
+            TrajectoryProperty.stress_voigt: (6,),
+            TrajectoryProperty.magmom: (self.num_sites,),
+            TrajectoryProperty.charge: (self.num_sites,),
         }
 
         self.all_lattices_equal = all(
             np.all(np.abs(self.structure[i].lattice.matrix - self.structure[j].lattice.matrix)) < self.lattice_match_tol
             for i in range(self.num_steps)
-            for j in range(i+1,self.num_steps)
+            for j in range(i + 1, self.num_steps)
         )
 
         if not self.all_lattices_equal and self.parsed_objects.get(TrajectoryProperty.lattice) is None:
-            self.parsed_objects[TrajectoryProperty.lattice] = np.array([
-                structure.lattice.matrix for structure in self.structure
-            ])
+            self.parsed_objects[TrajectoryProperty.lattice] = np.array(
+                [structure.lattice.matrix for structure in self.structure]
+            )
 
         if self.parsed_objects.get(TrajectoryProperty.coordinates) is None:
-            self.parsed_objects[TrajectoryProperty.coordinates] = np.array([
-                [site.frac_coords for site in structure]
-                for structure in self.structure
-            ])
+            self.parsed_objects[TrajectoryProperty.coordinates] = np.array(
+                [[site.frac_coords for site in structure] for structure in self.structure]
+            )
 
     @classmethod
-    def from_pymatgen_trajectory(cls, traj_file : str | Path | PmgTrajectory, **kwargs) -> TrajArchive:
+    def from_pymatgen_trajectory(cls, traj_file: str | Path | PmgTrajectory, **kwargs) -> TrajArchive:
         """
         Instantite a TrajArchive from a pymatgen Trajectory.
-        
+
         Parameters
         -----------
         traj_file : str, Path, or pymatgen.core.trajectory.Trajectory
@@ -100,41 +102,44 @@ class TrajArchive(Archiver):
             Trajectory as `properties`.
         **kwargs
             kwargs of TrajArchive
-            
+
         Returns
         ----------
         TrajArchive
         """
-        
-        if isinstance(traj_file, str | Path) and Path(traj_file).exists():
-            traj_file = PmgTrajectory.from_file(traj_file)
+
+        traj: PmgTrajectory = (
+            PmgTrajectory.from_file(traj_file) if isinstance(traj_file, str | Path) else traj_file.copy()
+        )
 
         properties = set()
-        for idx in range(len(traj_file)):
-            properties.update(set(traj_file.frame_properties[idx]))
-            properties.update(set(traj_file.site_properties[idx]))
-        
-        parsed_objects = {k : [] for k in ["structure"] + list(properties)}
+        for idx in range(len(traj)):
+            properties.update(set(traj.frame_properties[idx]))
+            properties.update(set(traj.site_properties[idx]))
 
-        for idx, structure in enumerate(traj_file):
+        parsed_objects: dict[TrajectoryProperty | str, Any] = {k: [] for k in ["structure"] + list(properties)}
+
+        for idx, structure in enumerate(traj):
             parsed_objects["structure"].append(structure)
             for k in properties:
-                if (prop := traj_file.site_properties[idx].get(k)) is not None:
+                if (prop := traj.site_properties[idx].get(k)) is not None:
                     parsed_objects[k].append(prop)
-                elif (prop := traj_file.frame_properties[idx].get(k)) is not None:
+                elif (prop := traj.frame_properties[idx].get(k)) is not None:
                     parsed_objects[k].append(prop)
 
-        return cls(parsed_objects,**kwargs)
-    
+        return cls(parsed_objects, **kwargs)
+
     @classmethod
-    def from_task_doc(cls, task_doc : TaskDoc, properties : list[TrajectoryProperty] | None = None, **kwargs) -> TrajArchive:
+    def from_task_doc(
+        cls, task_doc: TaskDoc, properties: list[TrajectoryProperty] | None = None, **kwargs
+    ) -> TrajArchive:
         """
         Instantite a TrajArchive from an emmet-core TaskDoc.
-        
+
         Parameters
         -----------
         task_doc : emmet-core TaskDoc
-            This class will pull all trajectory information from the `ionic_steps` field 
+            This class will pull all trajectory information from the `ionic_steps` field
             of each `calcs_reversed`, in the correct chronological order.
         properties : list of TrajectoryProperty
             An optional list of which known trajectory properties to pull from `ionic_steps`.
@@ -154,20 +159,22 @@ class TrajArchive(Archiver):
             for ionic_step in cr.output.ionic_steps:
                 site_properties.update(set(ionic_step.structure.site_properties))
 
-        parsed_objects = {k: [] for k in properties + list(site_properties)}
+        parsed_objects: dict[TrajectoryProperty | str, Any] = {k: [] for k in properties + list(site_properties)}
 
         # un-reverse the calcs_reversed
         for cr in task_doc.calcs_reversed[::-1]:
             for ionic_step in cr.output.ionic_steps:
                 for k in properties:
-                    parsed_objects[k].append(getattr(ionic_step, translation.get(k,k)))
+                    parsed_objects[k].append(getattr(ionic_step, translation.get(k, k)))
                 for k in site_properties:
                     parsed_objects[k].append(ionic_step.structure.site_properties.get(k))
 
         return cls(parsed_objects, **kwargs)
 
     @staticmethod
-    def to_dict(archive : str | Path | h5py.Group | zarr.Group, group_key : str | None = None) -> dict[TrajectoryProperty,np.ndarray]:
+    def to_dict(
+        archive: str | Path | h5py.Group | zarr.Group, group_key: str | None = None
+    ) -> dict[str | TrajectoryProperty, Any]:
         """
         Convert either an archive on the file system or in memory to a dict.
 
@@ -182,7 +189,7 @@ class TrajArchive(Archiver):
         Returns
         -----------
         A low-memory JSONable dict representation of the trajectory.
-      """
+        """
 
         archive_was_file = False
         ext = None
@@ -195,43 +202,48 @@ class TrajArchive(Archiver):
                 _loader = zarr.open
 
             archive = _loader(archive, "r")
-            
+
         group = archive[group_key if group_key is not None else "/"]
 
-        parsed_objects = {k: group.attrs[k] for k in ("species","constant_lattice",) }
+        parsed_objects = {
+            k: group.attrs[k]
+            for k in (
+                "species",
+                "constant_lattice",
+            )
+        }
         if group.attrs["constant_lattice"]:
             parsed_objects[TrajectoryProperty.lattice] = group.attrs["lattice"]
-            
+
         blocks = {}
         ranks = {}
         for icol, col in enumerate(group.attrs["columns"]):
             compound_idx = col.split("-")
             prop = TrajectoryProperty(compound_idx[0])
             if prop not in blocks:
-                blocks[prop] = [icol,-1]
+                blocks[prop] = [icol, -1]
                 ranks[prop] = [-1 for _ in range(len(compound_idx[1:]))]
-            blocks[prop][1] = max(blocks[prop][1],icol)
+            blocks[prop][1] = max(blocks[prop][1], icol)
             for i, idx in enumerate(compound_idx[1:]):
-                ranks[prop][i] = max(ranks[prop][i],int(idx)+1)
-        
+                ranks[prop][i] = max(ranks[prop][i], int(idx) + 1)
+
         for prop, block in blocks.items():
             ncol = block[1] - block[0]
             if ncol == 0:
                 # scalar properties
                 parsed_objects[prop] = np.array(group["trajectory"][:, block[0]])
             else:
-                parsed_objects[prop] = np.array([
-                    np.array(row[block[0]:block[1]+1]).reshape(tuple(ranks[prop]))
-                    for row in group["trajectory"]
-                ])
+                parsed_objects[prop] = np.array(
+                    [np.array(row[block[0] : block[1] + 1]).reshape(tuple(ranks[prop])) for row in group["trajectory"]]
+                )
 
         if archive_was_file and ext == ArchivalFormat.HDF5:
             archive.close()
-                    
+
         return parsed_objects
 
     @staticmethod
-    def order_sites(sites: list | Structure, site_order : list):
+    def order_sites(sites: list | Structure, site_order: list):
         running_sites = list(range(len(sites)))
         ordered_sites = []
         for ref_site in site_order:
@@ -243,23 +255,29 @@ class TrajArchive(Archiver):
 
     def to_group(self, group: h5py.Group | zarr.Group, group_key: str | None = None) -> None:
         """Append data to an existing HDF5-like file group."""
-        
+
         if group_key is not None:
             group.create_group(group_key)
             group = group[group_key]
 
         df = self.to_dataframe()
 
-        for k in ("num_sites","num_steps","constant_lattice","species","lattice",):
+        for k in (
+            "num_sites",
+            "num_steps",
+            "constant_lattice",
+            "species",
+            "lattice",
+        ):
             if (attr := df.attrs.get(k)) is not None:
                 group.attrs[k] = attr
 
         group.attrs["columns"] = df.columns.to_list()
-        group.create_dataset("trajectory", data = df.to_numpy(),  **self.compression)
+        group.create_dataset("trajectory", data=df.to_numpy(), **self.compression)
 
     def to_dataframe(self) -> pd.DataFrame:
         """Put trajectory in columnar DataFrame format."""
-        
+
         species_order = [site.species_string for site in self.structure[0]]
 
         columnar_data_rank = 0
@@ -268,14 +286,14 @@ class TrajArchive(Archiver):
                 columnar_data_rank += np.prod(rank)
 
         columns = []
-        columnar_data = np.zeros((self.num_steps,columnar_data_rank))
+        columnar_data = np.zeros((self.num_steps, columnar_data_rank))
         iprop = 0
         for prop in [_prop for _prop in TrajectoryProperty if _prop != TrajectoryProperty.structure]:
             ncol = np.prod(self._typing[prop])
             if (prop_data := self.parsed_objects.get(prop)) is None:
                 continue
-            columnar_data[:, iprop:iprop + ncol] = [np.ravel(prop_data_step) for prop_data_step in prop_data]
-            unraveled_idx = np.unravel_index(list(range(ncol)),self._typing[prop])                
+            columnar_data[:, iprop : iprop + ncol] = [np.ravel(prop_data_step) for prop_data_step in prop_data]
+            unraveled_idx = np.unravel_index(list(range(ncol)), self._typing[prop])
             if len(unraveled_idx) == 1:
                 columns += [f"{prop}-{idx}" for idx in range(ncol)]
             elif len(unraveled_idx) == 2:
@@ -283,27 +301,27 @@ class TrajArchive(Archiver):
             iprop += ncol
 
         dataframe = pd.DataFrame(
-            data = columnar_data,#s.astype(np.float32),
-            columns = columns,
+            data=columnar_data,  # s.astype(np.float32),
+            columns=columns,
             index=None,
         )
 
         dataframe.attrs = {
-            "num_sites" : self.num_sites,
-            "num_steps" : self.num_steps,
-            "species" : species_order,
-            "constant_lattice" : self.all_lattices_equal
+            "num_sites": self.num_sites,
+            "num_steps": self.num_steps,
+            "species": species_order,
+            "constant_lattice": self.all_lattices_equal,
         }
-            
+
         if self.all_lattices_equal:
             dataframe.attrs["lattice"] = self.structure[0].lattice.matrix.tolist()
 
         return dataframe
 
     @classmethod
-    def to_pymatgen_trajectory(cls, file_name : str | Path, group_key : str | None = None) -> PmgTrajectory:
+    def to_pymatgen_trajectory(cls, file_name: str | Path, group_key: str | None = None) -> PmgTrajectory:
         """Create a pymatgen Trajectory from an archive.
-        
+
         Parameters
         -----------
         file_name : str or Path
@@ -317,33 +335,24 @@ class TrajArchive(Archiver):
         pymatgen.core.trajectory.Trajectory object.
         """
 
-        data = cls.to_dict(file_name,group_key=group_key)
+        data: dict[str | TrajectoryProperty, Any] = cls.to_dict(file_name, group_key=group_key)
         num_steps = len(data["fractional_coordinates"])
         if data["constant_lattice"]:
             structures = [
-                Structure(
-                    data["lattice"],
-                    data["species"],
-                    coords,
-                    coords_are_cartesian=False
-                ) for coords in data["fractional_coordinates"]
+                Structure(data["lattice"], data["species"], coords, coords_are_cartesian=False)
+                for coords in data["fractional_coordinates"]
             ]
         else:
             structures = [
-                Structure(
-                    data["lattice"][idx],
-                    data["species"],
-                    coords,
-                    coords_are_cartesian=False
-                ) for idx, coords in enumerate(data["fractional_coordinates"])
+                Structure(data["lattice"][idx], data["species"], coords, coords_are_cartesian=False)
+                for idx, coords in enumerate(data["fractional_coordinates"])
             ]
-        
+
         frame_properties = [
             {
-                k.value : data[k][idx]
-                for k in TrajectoryProperty if k in data and k not in (
-                    "lattice", "fractional_coordinates", "structure"
-                )
+                k.value: data[k][idx]
+                for k in TrajectoryProperty
+                if k in data and k not in ("lattice", "fractional_coordinates", "structure")
             }
             for idx in range(num_steps)
         ]
@@ -353,12 +362,14 @@ class TrajArchive(Archiver):
             constant_lattice=data["constant_lattice"],
             frame_properties=frame_properties,
         )
-    
+
     @classmethod
-    def to_ase_trajectory(cls, file_name : str | Path, ase_traj_file : str | Path | None = None, group_key : str | None = None) -> AseTrajectory:
+    def to_ase_trajectory(
+        cls, file_name: str | Path, ase_traj_file: str | Path | None = None, group_key: str | None = None
+    ) -> AseTrajectory:
         """
         Create an ASE Trajectory from an archive.
-        
+
         Parameters
         -----------
         file_name : str or Path
@@ -383,15 +394,24 @@ class TrajArchive(Archiver):
 
         ase_traj_file = ase_traj_file or NamedTemporaryFile().name
 
-        data = cls.to_dict(file_name,group_key=group_key)
-        
+        data = cls.to_dict(file_name, group_key=group_key)
+
         for idx, coords in enumerate(data["fractional_coordinates"]):
-            atoms = Atoms(symbols=data["species"],positions = coords,pbc=True)
+            atoms = Atoms(symbols=data["species"], positions=coords, pbc=True)
             atoms.calc = SinglePointCalculator(
-                atoms = atoms,
-                **{k: data[k][idx] for k in ("energy","forces","stress","magmom",) if k in data}
+                atoms=atoms,
+                **{
+                    k: data[k][idx]
+                    for k in (
+                        "energy",
+                        "forces",
+                        "stress",
+                        "magmom",
+                    )
+                    if k in data
+                },
             )
             with AseTrajectory(ase_traj_file, "a" if idx > 0 else "w", atoms=atoms) as _traj_file:
                 _traj_file.write()
-                
-        return AseTrajectory(ase_traj_file,"r")
+
+        return AseTrajectory(ase_traj_file, "r")

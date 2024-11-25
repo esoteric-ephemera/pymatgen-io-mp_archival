@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 import h5py
 import json
@@ -89,7 +89,7 @@ _PMG_OBJ = {
 class PoscarArchive(StructureArchive):
     """Archive a POSCAR."""
 
-    #parsed_objects: dict[str, Any] = field(default_factory=lambda: {"POSCAR": None})
+    # parsed_objects: dict[str, Any] = field(default_factory=lambda: {"POSCAR": None})
 
     def __post_init__(self):
         if isinstance(self.parsed_objects["POSCAR"], Structure):
@@ -98,11 +98,10 @@ class PoscarArchive(StructureArchive):
             self.parsed_objects["POSCAR"] = Poscar.from_file(self.parsed_objects["POSCAR"])
         elif isinstance(self.parsed_objects["POSCAR"], str):
             self.parsed_objects["POSCAR"] = Poscar.from_str(self.parsed_objects["POSCAR"])
-        
+
         self.metadata.update({"comment": self.parsed_objects["POSCAR"]["comment"]})
 
         super().__post_init__()
-
 
     @staticmethod
     def from_group(group: h5py.Group | zarr.Group) -> Poscar:
