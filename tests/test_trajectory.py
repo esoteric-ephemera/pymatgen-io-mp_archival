@@ -81,6 +81,9 @@ def test_traj_archive(tmp_dir, sample_task):
 
     for k in ("forces", "stress"):
         assert all(
-            np.all(np.abs(traj_archive_copy.parsed_objects[k][idx] - obj_arr) < 1.0e-6)
+            np.all(
+                np.abs(traj_archive_copy.parsed_objects[k][idx] - np.array(obj_arr))
+                < 1.0e-6
+            )
             for idx, obj_arr in enumerate(traj_archive.parsed_objects[k])
         )

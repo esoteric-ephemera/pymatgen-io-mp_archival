@@ -245,7 +245,10 @@ class TrajArchive(Archiver):
         ranks = {}
         for icol, col in enumerate(group.attrs["columns"]):
             compound_idx = col.split("-")
-            prop = TrajectoryProperty(compound_idx[0])
+            try:
+                prop = TrajectoryProperty(compound_idx[0])
+            except ValueError:
+                prop = compound_idx[0]
             if prop not in blocks:
                 blocks[prop] = [icol, -1]
                 ranks[prop] = [-1 for _ in range(len(compound_idx[1:]))]
@@ -344,7 +347,7 @@ class TrajArchive(Archiver):
             iprop += ncol
 
         dataframe = pd.DataFrame(
-            data=columnar_data.astype(np.float32),
+            data=columnar_data,
             columns=columns,
             index=None,
         )
