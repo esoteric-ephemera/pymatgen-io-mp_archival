@@ -50,7 +50,7 @@ class TrajArchive(Archiver):
     """
 
     lattice_match_tol: float = 1.0e-6
-    all_lattices_equal : bool | None = None
+    all_lattices_equal: bool | None = None
 
     def __post_init__(self) -> None:
         """Ensure that structure information is included and parsed."""
@@ -66,7 +66,8 @@ class TrajArchive(Archiver):
             self.all_lattices_equal = all(
                 np.all(
                     np.abs(
-                        self.structure[i].lattice.matrix - self.structure[j].lattice.matrix
+                        self.structure[i].lattice.matrix
+                        - self.structure[j].lattice.matrix
                     )
                 )
                 < self.lattice_match_tol
@@ -76,7 +77,9 @@ class TrajArchive(Archiver):
 
         if self.parsed_objects.get(TrajectoryProperty.lattice) is None:
             if self.all_lattices_equal:
-                self.parsed_objects[TrajectoryProperty.lattice] = np.array([self.structure[0].lattice.matrix])
+                self.parsed_objects[TrajectoryProperty.lattice] = np.array(
+                    [self.structure[0].lattice.matrix]
+                )
             else:
                 self.parsed_objects[TrajectoryProperty.lattice] = np.array(
                     [structure.lattice.matrix for structure in self.structure]
@@ -89,8 +92,10 @@ class TrajArchive(Archiver):
                     for structure in self.structure
                 ]
             )
-        
-        self._typing = {k: np.array(v).shape[1:] or (1,) for k, v in self.parsed_objects.items()}
+
+        self._typing = {
+            k: np.array(v).shape[1:] or (1,) for k, v in self.parsed_objects.items()
+        }
 
     @classmethod
     def from_pymatgen_trajectory(
@@ -121,15 +126,20 @@ class TrajArchive(Archiver):
 
         properties = set()
         for idx in range(len(traj)):
-            properties.update(set(traj.frame_properties[idx] | traj[idx].site_properties))
+            properties.update(
+                set(traj.frame_properties[idx] | traj[idx].site_properties)
+            )
 
         parsed_objects: dict[TrajectoryProperty | str, Any] = {
-            k: [None for _ in range(len(traj))] for k in ["structure"] + list(properties)
+            k: [None for _ in range(len(traj))]
+            for k in ["structure"] + list(properties)
         }
 
         for idx, structure in enumerate(traj):
             parsed_objects["structure"][idx] = structure
-            for k, v in (traj[idx].site_properties | traj.frame_properties[idx]).items():
+            for k, v in (
+                traj[idx].site_properties | traj.frame_properties[idx]
+            ).items():
                 parsed_objects[k][idx] = v
 
         kwargs.update({"all_lattices_equal": traj.constant_lattice})
