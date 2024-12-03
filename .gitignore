@@ -20,3 +20,7 @@ setuptools*
 pymatgen/\.vscode/
 
 .vscode/
+
+examples/*.json*
+examples/*.h5
+examples/*.zarr
