@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from typing import Any
     from typing_extensions import Self
 
+
 class ArchivalFormat(StrEnum):
     HDF5 = "h5"
     ZARR = "zarr"
@@ -75,9 +76,9 @@ class Archiver:
     def to_archive(self, file_name: str | Path = "archive") -> None:
         """Create a new archive for this class of data."""
 
-        if isinstance(file_name,Path):
+        if isinstance(file_name, Path):
             file_name = str(file_name)
-            
+
         if len(file_split := file_name.split(".")) > 1:
             file_name = ".".join(file_split[:-1])
         file_name += f".{self.format.value}"  # type: ignore[union-attr,attr-defined]
@@ -93,9 +94,9 @@ class Archiver:
                 f"Unknown file format {self.format}. Acceptable file extensions are:"
                 f" {', '.join(ArchivalFormat)}"
             )
-        
+
     @classmethod
-    def from_archive(cls, archive_path : str | Path, *args, **kwargs) -> Self:
+    def from_archive(cls, archive_path: str | Path, *args, **kwargs) -> Self:
         """Define methods to instantiate an Archiver from an archive path."""
         raise NotImplementedError
 

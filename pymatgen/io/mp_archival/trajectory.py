@@ -57,11 +57,19 @@ class TrajArchive(Archiver):
         """Ensure that structure information is included and parsed."""
         super().__post_init__()
 
-        if TrajectoryProperty.structure not in self.parsed_objects:
-            raise ValueError("You must specify a set of structures!")
+        use_from_dict_rep = all(
+            TrajectoryProperty(prop) not in self.parsed_objects for prop in ("lattice","species","fractional_coordinates")
+        )
 
-        self.num_sites = len(self.structure[0])
-        self.num_steps = len(self.structure)
+        if not use_from_dict_rep and TrajectoryProperty.structure not in self.parsed_objects:
+            raise ValueError("You must specify a set of structures, or identically a set of lattices, species, and atomic coordinates!")
+
+        if use_from_dict_rep:
+            self.num_sites = len(self.species)
+            self.num_steps = len(self.fractional_coordinates)
+        else:
+            self.num_sites = len(self.structure[0])
+            self.num_steps = len(self.structure)
 
         if self.all_lattices_equal is None:
             self.all_lattices_equal = all(
@@ -128,9 +136,7 @@ class TrajArchive(Archiver):
         properties = set()
         frame_properties = traj.frame_properties or [{} for _ in range(len(traj))]
         for idx in range(len(traj)):
-            properties.update(
-                set(frame_properties[idx] | traj[idx].site_properties)
-            )
+            properties.update(set(frame_properties[idx] | traj[idx].site_properties))
 
         parsed_objects: dict[TrajectoryProperty | str, Any] = {
             k: [None for _ in range(len(traj))]
@@ -139,9 +145,7 @@ class TrajArchive(Archiver):
 
         for idx, structure in enumerate(traj):
             parsed_objects["structure"][idx] = structure
-            for k, v in (
-                traj[idx].site_properties | frame_properties[idx]
-            ).items():
+            for k, v in (traj[idx].site_properties | frame_properties[idx]).items():
                 parsed_objects[k][idx] = v
 
         kwargs.update({"all_lattices_equal": traj.constant_lattice})
@@ -277,7 +281,7 @@ class TrajArchive(Archiver):
             archive.close()
 
         return parsed_objects
-    
+
     @staticmethod
     def order_sites(sites: list | Structure, site_order: list):
         running_sites = list(range(len(sites)))
@@ -367,8 +371,10 @@ class TrajArchive(Archiver):
         return dataframe
 
     @classmethod
-    def from_archive(cls, archive_path : str | Path, **kwargs) -> Self:
-        return cls(parsed_objects = cls.to_dict(archive_path), **kwargs)
+    def from_archive(cls, archive_path: str | Path, **kwargs) -> Self:
+        data = cls.to_dict(archive_path)
+        constant_lattice = data.pop("constant_lattice")
+        return cls(parsed_objects=data, all_lattices_equal = constant_lattice, **kwargs)
 
     @classmethod
     def to_pymatgen_trajectory(
@@ -487,4 +493,3 @@ class TrajArchive(Archiver):
                 _traj_file.write()
 
         return AseTrajectory(ase_traj_file, "r")
-    
