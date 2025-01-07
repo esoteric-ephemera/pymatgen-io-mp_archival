@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import h5py
@@ -15,9 +16,8 @@ from pymatgen.core import Structure
 from pymatgen.io.mp_archival.utils import StrEnum
 
 if TYPE_CHECKING:
-    from pathlib import Path
     from typing import Any
-
+    from typing_extensions import Self
 
 class ArchivalFormat(StrEnum):
     HDF5 = "h5"
@@ -33,7 +33,7 @@ class Archiver:
     metadata: dict[str, Any] | None = None
     format: ArchivalFormat | str = ArchivalFormat.HDF5
     compression: dict | None = None
-    float_dtype: str | np.dtype = "float32"
+    float_dtype: str | np.dtype = "float64"
 
     def __post_init__(self) -> None:
         """Ensure that attributes have correct type."""
@@ -72,9 +72,12 @@ class Archiver:
         """Append data to an existing HDF5-like file group."""
         raise NotImplementedError
 
-    def to_archive(self, file_name: str = "archive") -> None:
+    def to_archive(self, file_name: str | Path = "archive") -> None:
         """Create a new archive for this class of data."""
 
+        if isinstance(file_name,Path):
+            file_name = str(file_name)
+            
         if len(file_split := file_name.split(".")) > 1:
             file_name = ".".join(file_split[:-1])
         file_name += f".{self.format.value}"  # type: ignore[union-attr,attr-defined]
@@ -85,6 +88,16 @@ class Archiver:
         elif self.format == ArchivalFormat.ZARR:
             with zarr.open(file_name, "w") as zg:
                 self.to_group(zg)
+        else:
+            raise ValueError(
+                f"Unknown file format {self.format}. Acceptable file extensions are:"
+                f" {', '.join(ArchivalFormat)}"
+            )
+        
+    @classmethod
+    def from_archive(cls, archive_path : str | Path, *args, **kwargs) -> Self:
+        """Define methods to instantiate an Archiver from an archive path."""
+        raise NotImplementedError
 
 
 @dataclass

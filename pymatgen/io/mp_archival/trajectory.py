@@ -24,6 +24,7 @@ from pymatgen.io.mp_archival.utils import StrEnum
 
 if TYPE_CHECKING:
     from typing import Any
+    from typing_extensions import Self
 
     from emmet.core.tasks import TaskDoc
 
@@ -125,9 +126,10 @@ class TrajArchive(Archiver):
         )
 
         properties = set()
+        frame_properties = traj.frame_properties or [{} for _ in range(len(traj))]
         for idx in range(len(traj)):
             properties.update(
-                set(traj.frame_properties[idx] | traj[idx].site_properties)
+                set(frame_properties[idx] | traj[idx].site_properties)
             )
 
         parsed_objects: dict[TrajectoryProperty | str, Any] = {
@@ -138,7 +140,7 @@ class TrajArchive(Archiver):
         for idx, structure in enumerate(traj):
             parsed_objects["structure"][idx] = structure
             for k, v in (
-                traj[idx].site_properties | traj.frame_properties[idx]
+                traj[idx].site_properties | frame_properties[idx]
             ).items():
                 parsed_objects[k][idx] = v
 
@@ -275,7 +277,7 @@ class TrajArchive(Archiver):
             archive.close()
 
         return parsed_objects
-
+    
     @staticmethod
     def order_sites(sites: list | Structure, site_order: list):
         running_sites = list(range(len(sites)))
@@ -363,6 +365,10 @@ class TrajArchive(Archiver):
             dataframe.attrs["lattice"] = self.structure[0].lattice.matrix.tolist()
 
         return dataframe
+
+    @classmethod
+    def from_archive(cls, archive_path : str | Path, **kwargs) -> Self:
+        return cls(parsed_objects = cls.to_dict(archive_path), **kwargs)
 
     @classmethod
     def to_pymatgen_trajectory(
@@ -481,3 +487,4 @@ class TrajArchive(Archiver):
                 _traj_file.write()
 
         return AseTrajectory(ase_traj_file, "r")
+    
