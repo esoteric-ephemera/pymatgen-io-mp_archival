@@ -147,13 +147,13 @@ class ElementSymbol(Enum):
     def __str__(self):
         return self.name
 
-
 class LightLattice(tuple):
-    def __init__(self, matrix: ArrayLike):
+
+    def __new__(cls, matrix):
         lattice_matrix = np.array(matrix)
         if lattice_matrix.shape != (3, 3):
             raise ValueError("Lattice matrix must be 3x3.")
-        tuple([tuple(v) for v in lattice_matrix.tolist()])
+        return super(LightLattice,cls).__new__(cls,tuple([tuple(v) for v in lattice_matrix.tolist()]))
 
     def as_dict(self) -> dict[str, list | str]:
         return {"@class": self.__class__, "@module": self.__module__, "matrix": self}
@@ -164,7 +164,6 @@ class LightLattice(tuple):
 
     def copy(self) -> Self:
         return LightLattice(self)
-
 
 class LightElement:
     def __init__(
@@ -182,14 +181,14 @@ class LightElement:
             self._element = ElementSymbol[ele]
         else:
             raise ValueError(f"Unknown element {ele}")
-        self.species = {self.elements[0]: 1}
+        self.species = {self.elements[0].name: 1}
         self.lattice = lattice
-        if self.lattice is not None and not isinstance(self.lattice, LightLattice):
+        if self.lattice and not isinstance(self.lattice, LightLattice):
             self.lattice = LightLattice(self.lattice)
 
         self.cart_coords = None
         self.frac_coords = None
-        if coords is not None and self.lattice is not None:
+        if coords and self.lattice:
             if coords_are_cartesian:
                 self.cart_coords = np.array(coords)
                 self.frac_coords = np.linalg.solve(
@@ -202,6 +201,12 @@ class LightElement:
         self.label = label or self._element.name
         self.properties = properties or {}
 
+    def __int__(self) -> int:
+        return self._element.Z
+
+    def __float__(self) -> float:
+        return float(self._element.Z)
+
     @property
     def elements(self) -> list[ElementSymbol]:
         return [self._element]
@@ -213,6 +218,10 @@ class LightElement:
     @property
     def name(self) -> str:
         return self._element.name
+    
+    @property
+    def species_string(self) -> str:
+        return self.name
 
     def __str__(self):
         return self.label
@@ -356,10 +365,10 @@ class LightStructure:
             return " " * nspace + f"{val:.8f}"
 
         lattice_str = [
-            [_format_float(self.lattice[i, j]) for j in range(3)] for i in range(3)
+            [_format_float(self.lattice[i][j]) for j in range(3)] for i in range(3)
         ]
         coords_str = [
-            [_format_float(self.cart_coords[i, j]) for j in range(3)]
+            [_format_float(self.cart_coords[i][j]) for j in range(3)]
             for i in range(len(self))
         ]
         as_str = "Lattice\n"
@@ -370,7 +379,7 @@ class LightStructure:
         as_str += "\nCartesian Coordinates\n"
 
         as_str += "\n".join(
-            f"{self.site_composition[idx]}{' '*(3-len(str(self.site_composition[idx])))}: "
+            f"{self[idx]._element}{' '*(3-len(str(self[idx]._element)))}: "
             + ",".join(site_str)
             for idx, site_str in enumerate(coords_str)
         )
