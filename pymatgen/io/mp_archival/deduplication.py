@@ -5,22 +5,26 @@ from collections.abc import Iterator
 from pydantic import BaseModel, Field
 
 from enum import Enum
-from typing import Any, TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from pymatgen.core import Structure
+from pymatgen.core import Structure, PeriodicSite, Lattice
 from pymatgen.io.vasp import Poscar
 
-from pymatgen.io.mp_archival.typing import ThreeVector, ThreeByThreeMatrix
+from pymatgen.io.mp_archival.typing import ThreeVector, ThreeByThreeMatrix, SeqThreeVector
 
 if TYPE_CHECKING:
     from pathlib import Path
-    from typing import Any, Sequence
+    from typing import Any
     from typing_extensions import Self
 
-    from numpy.typing import ArrayLike
+class SiteProperties(Enum):
 
+    magmom = "magmom"
+    charge = "charge"
+    velocities = "velocities"
+    selective_dynamics = "selective_dynamics"
 
 class ElementSymbol(Enum):
     """Lightweight representation of a chemical element."""
@@ -171,31 +175,28 @@ class LightLattice(tuple):
 
 class LightElement(BaseModel):
 
-    element : ElementSymbol = Field(None, description="The element.")
-    lattice : Optional[ThreeByThreeMatrix] = Field(None, description="The lattice in 3x3 matrix form.")
-    cart_coords : Optional[ThreeVector] = Field(None, description="The postion of the site in Cartesian coordinates.")
-    frac_coords : Optional[ThreeVector] = Field(None, description="The postion of the site in direct lattice vector coordinates.")
-    charge : Optional[float] = Field(None, description="The on-site charge.")
-    magmom : Optional[float] = Field(None, description="The on-site magnetic moment.")
+    element : ElementSymbol = Field(description="The element.")
+    lattice : ThreeByThreeMatrix | None = Field(default = None, description="The lattice in 3x3 matrix form.")
+    cart_coords : ThreeVector | None = Field(default = None, description="The postion of the site in Cartesian coordinates.")
+    frac_coords : ThreeVector | None = Field(default = None, description="The postion of the site in direct lattice vector coordinates.")
+    charge : float | None = Field(default = None, description="The on-site charge.")
+    magmom : float | None = Field(default = None, description="The on-site magnetic moment.")
+    velocities : ThreeVector | None = Field(default = None, description="The Cartesian components of the site velocity.")
+    selective_dynamics : tuple[bool, bool, bool] | None = Field(default = None, description="The degrees of freedom which are allowed to relax on the site.")
 
     def model_post_init(self, __context : Any) -> None:
         if self.lattice:
             if self.cart_coords is not None:
-                self.frac_coords = np.linalg.solve(
+                self.frac_coords = self.frac_coords or np.linalg.solve(
                         np.array(self.lattice).T, np.array(self.cart_coords)
                     )
             elif self.frac_coords is not None:
-                self.cart_coords = tuple(np.matmul(np.array(self.lattice).T, np.array(self.frac_coords)))
+                self.cart_coords = self.cart_coords or tuple(
+                    np.matmul(np.array(self.lattice).T, np.array(self.frac_coords))
+                )
         
     @classmethod
-    def from_element(
-        cls,
-        element: int | str | LightElement,
-        lattice: ThreeByThreeMatrix | LightLattice | None = None,
-        coords: ThreeVector | None = None,
-        coords_are_cartesian: bool = False,
-        **kwargs
-    ):
+    def from_periodic_site(cls, site : PeriodicSite):
         if isinstance(element, (int | ElementSymbol)):
             element = ElementSymbol(element)
         elif isinstance(element, str):
@@ -203,23 +204,21 @@ class LightElement(BaseModel):
         else:
             raise ValueError(f"Unknown element {element}")
 
-        lattice = LightLattice(lattice) if lattice else None
-        cart_coords = None
-        frac_coords = None
-        if coords is not None:
-            coords = tuple(coords)
-            
-        if coords_are_cartesian:
-            cart_coords = coords
-        else:
-            frac_coords = coords
 
         return cls(
-            element = element,
-            lattice = lattice,
-            cart_coords = cart_coords,
-            frac_coords = frac_coords,
-            **kwargs
+            element = ElementSymbol(next(iter(site.species.remove_charges().as_dict()))),
+            lattice = LightLattice(site.lattice.matrix),
+            frac_coords = site.frac_coords,
+            cart_coords = site.coords,
+        )
+
+    def to_periodic_site(self) -> PeriodicSite:
+        return PeriodicSite(
+            self.element.name,
+            self.frac_coords,
+            Lattice(self.lattice),
+            coords_are_cartesian=False,
+            properties = self.properties
         )
 
     @property
@@ -229,7 +228,7 @@ class LightElement(BaseModel):
     @property
     def properties(self) -> dict[str,float]:
         props = {}
-        for k in ("charge","magmom"):
+        for k in SiteProperties.__members__:
             if (prop := getattr(self,k,None)) is not None:
                 props[k] = prop
         return props
@@ -262,6 +261,11 @@ class LightElement(BaseModel):
 
     def __str__(self):
         return self.label
+    
+    def add_attrs(self, **kwargs) -> LightElement:
+        config = self.model_dump()
+        config.update(**kwargs)
+        return LightElement(**config)
 
 class LightStructure(BaseModel):
     """Light-on-memory implementation of a Structure.
@@ -269,8 +273,22 @@ class LightStructure(BaseModel):
     Basically a duck-typed Structure.
     """
     
-    lattice : ThreeByThreeMatrix = Field(None, description="The lattice in 3x3 matrix form.")
-    sites : list[LightElement] = Field(None, description="The sites in the structure.")
+    lattice : ThreeByThreeMatrix = Field(description="The lattice in 3x3 matrix form.")
+    species : list[LightElement] = Field(description="The elements in the structure.")
+    frac_coords : SeqThreeVector = Field(description="The direct coordinates of the sites in the structure.")
+    cart_coords : SeqThreeVector = Field(description="The Cartesian coordinates of the sites in the structure.")
+    charge : float | None = Field(None, description="The net charge on the structure.")
+
+    @property
+    def sites(self) -> list[LightElement]:
+        return [
+            species.add_attrs(
+                lattice = self.lattice,
+                cart_coords = self.cart_coords[idx],
+                frac_coords = self.frac_coords[idx],
+            )
+            for idx, species in enumerate(self.species)
+        ]
 
     def __getitem__(self, idx: int | slice) -> LightElement | list[LightElement]:
         if isinstance(idx, int) or isinstance(idx, slice):
@@ -281,19 +299,11 @@ class LightStructure(BaseModel):
         yield from self.sites
 
     @property
-    def frac_coords(self) -> np.ndarray:
-        return np.array([self.sites[idx].frac_coords for idx in range(len(self))])
-
-    @property
-    def cart_coords(self) -> np.ndarray:
-        return np.array([self.sites[idx].cart_coords for idx in range(len(self))])
-
-    @property
     def volume(self) -> float:
         return abs(np.linalg.det(self.lattice))
 
     def __len__(self) -> int:
-        return len(self.sites)
+        return len(self.species)
 
     @property
     def num_sites(self) -> int:
@@ -309,26 +319,29 @@ class LightStructure(BaseModel):
         lattice = LightLattice(structure.lattice.matrix)
         properties = [{} for _ in range(len(structure))]
         for idx, site in enumerate(structure):
-            for k in ("charge","magmom"):
+            for k in ("charge","magmom","velocities","selective_dynamics"):
                 if (prop := site.properties.get(k)) is not None:
                     properties[idx][k] = prop
 
-        sites = [
-            LightElement.from_element(
-                next(iter(site.species.remove_charges().as_dict())),
-                lattice=lattice,
-                coords=site.frac_coords,
-                coords_are_cartesian=False,
+        species = [
+            LightElement(
+                element = ElementSymbol[next(iter(site.species.remove_charges().as_dict()))],
                 **properties[idx]
             )
             for idx, site in enumerate(structure)
         ]
 
         return cls(
-            lattice=structure.lattice.matrix,
-            sites = sites
+            lattice=lattice,
+            species = species,
+            frac_coords = [site.frac_coords for site in structure],
+            cart_coords = [site.coords for site in structure],
+            charge = structure.charge,
         )
-
+    
+    def to_structure(self) -> Structure:
+        return Structure.from_sites([site.to_periodic_site() for site in self], charge = self.charge)
+            
     @classmethod
     def from_poscar(cls, poscar_path: str | Path) -> Self:
         return cls.from_structure(Poscar.from_file(poscar_path).structure)
