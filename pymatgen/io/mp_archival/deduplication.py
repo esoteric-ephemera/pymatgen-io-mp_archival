@@ -1,14 +1,18 @@
 """Tools for deduplicating calculations"""
 
 from __future__ import annotations
+from collections.abc import Iterator
+from pydantic import BaseModel, Field
 
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Optional
 
 import numpy as np
 
 from pymatgen.core import Structure
 from pymatgen.io.vasp import Poscar
+
+from pymatgen.io.mp_archival.typing import ThreeVector, ThreeByThreeMatrix
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -165,125 +169,116 @@ class LightLattice(tuple):
     def copy(self) -> Self:
         return LightLattice(self)
 
-class LightElement:
-    def __init__(
-        self,
-        ele: int | str | ElementSymbol,
-        lattice: ArrayLike | LightLattice | None = None,
-        coords: ArrayLike | None = None,
-        coords_are_cartesian: bool = False,
-        label: str | None = None,
-        properties: dict | None = None,
-    ):
-        if isinstance(ele, (int | ElementSymbol)):
-            self._element = ElementSymbol(ele)
-        elif isinstance(ele, str):
-            self._element = ElementSymbol[ele]
-        else:
-            raise ValueError(f"Unknown element {ele}")
-        self.species = {self.elements[0].name: 1}
-        self.lattice = lattice
-        if self.lattice and not isinstance(self.lattice, LightLattice):
-            self.lattice = LightLattice(self.lattice)
+class LightElement(BaseModel):
 
-        self.cart_coords = None
-        self.frac_coords = None
-        if coords and self.lattice:
-            if coords_are_cartesian:
-                self.cart_coords = np.array(coords)
+    element : ElementSymbol = Field(None, description="The element.")
+    lattice : Optional[ThreeByThreeMatrix] = Field(None, description="The lattice in 3x3 matrix form.")
+    cart_coords : Optional[ThreeVector] = Field(None, description="The postion of the site in Cartesian coordinates.")
+    frac_coords : Optional[ThreeVector] = Field(None, description="The postion of the site in direct lattice vector coordinates.")
+    charge : Optional[float] = Field(None, description="The on-site charge.")
+    magmom : Optional[float] = Field(None, description="The on-site magnetic moment.")
+
+    def model_post_init(self, __context : Any) -> None:
+        if self.lattice:
+            if self.cart_coords is not None:
                 self.frac_coords = np.linalg.solve(
-                    np.array(self.lattice).T, self.cart_coords
-                )
-            else:
-                self.frac_coords = np.array(coords)
-                self.cart_coords = np.matmul(np.array(self.lattice).T, self.frac_coords)
+                        np.array(self.lattice).T, np.array(self.cart_coords)
+                    )
+            elif self.frac_coords is not None:
+                self.cart_coords = tuple(np.matmul(np.array(self.lattice).T, np.array(self.frac_coords)))
+        
+    @classmethod
+    def from_element(
+        cls,
+        element: int | str | LightElement,
+        lattice: ThreeByThreeMatrix | LightLattice | None = None,
+        coords: ThreeVector | None = None,
+        coords_are_cartesian: bool = False,
+        **kwargs
+    ):
+        if isinstance(element, (int | ElementSymbol)):
+            element = ElementSymbol(element)
+        elif isinstance(element, str):
+            element = ElementSymbol[element]
+        else:
+            raise ValueError(f"Unknown element {element}")
 
-        self.label = label or self._element.name
-        self.properties = properties or {}
+        lattice = LightLattice(lattice) if lattice else None
+        cart_coords = None
+        frac_coords = None
+        if coords is not None:
+            coords = tuple(coords)
+            
+        if coords_are_cartesian:
+            cart_coords = coords
+        else:
+            frac_coords = coords
+
+        return cls(
+            element = element,
+            lattice = lattice,
+            cart_coords = cart_coords,
+            frac_coords = frac_coords,
+            **kwargs
+        )
+
+    @property
+    def species(self) -> dict[str,int]:
+        return {self.element.name : 1}
+
+    @property
+    def properties(self) -> dict[str,float]:
+        props = {}
+        for k in ("charge","magmom"):
+            if (prop := getattr(self,k,None)) is not None:
+                props[k] = prop
+        return props
 
     def __int__(self) -> int:
-        return self._element.Z
+        return self.element.Z
 
     def __float__(self) -> float:
-        return float(self._element.Z)
+        return float(self.element.Z)
 
     @property
     def elements(self) -> list[ElementSymbol]:
-        return [self._element]
+        return [self.element]
 
     @property
     def Z(self) -> int:
-        return self._element.Z
+        return self.element.Z
 
     @property
     def name(self) -> str:
-        return self._element.name
+        return self.element.name
     
     @property
     def species_string(self) -> str:
         return self.name
 
+    @property
+    def label(self) -> str:
+        return self.name
+
     def __str__(self):
         return self.label
 
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "@class": self.__class__,
-            "@module": self.__module__,
-            "element": self._element.name,
-            "lattice": self.lattice.as_dict() if self.lattice else None,
-            "frac_coords": self.frac_coords.tolist() if self.frac_coords else None,
-            "label": self.label,
-            "properties": self.properties,
-        }
-
-    @classmethod
-    def from_dict(cls, dct: dict[str, Any]):
-        return cls(
-            dct["element"],
-            lattice=dct.get("lattice"),
-            coords=dct.get("frac_coords"),
-            coords_are_cartesian=False,
-            label=dct.get("label"),
-            properties=dct.get("properties"),
-        )
-
-
-class LightStructure:
+class LightStructure(BaseModel):
     """Light-on-memory implementation of a Structure.
 
     Basically a duck-typed Structure.
     """
+    
+    lattice : ThreeByThreeMatrix = Field(None, description="The lattice in 3x3 matrix form.")
+    sites : list[LightElement] = Field(None, description="The sites in the structure.")
 
-    def __init__(
-        self,
-        lattice: ArrayLike,
-        site_composition: Sequence[int | str | ElementSymbol],
-        coords: ArrayLike,
-        coords_are_cartesian: bool = False,
-    ):
-        self.lattice = LightLattice(lattice)
-        self.sites = [
-            LightElement(
-                ele,
-                lattice=self.lattice,
-                coords=coords[idx],
-                coords_are_cartesian=coords_are_cartesian,
-            )
-            for idx, ele in enumerate(site_composition)
-        ]
-
-        """
-        if coords_are_cartesian:
-            self.cart_coords = np.array(coords)
-        else:
-            self.cart_coords = np.einsum("ij,ki->kj",self.lattice,np.array(coords))
-        """
-
-    def __getitem__(self, idx: int | slice) -> ElementSymbol | list[ElementSymbol]:
+    def __getitem__(self, idx: int | slice) -> LightElement | list[LightElement]:
         if isinstance(idx, int) or isinstance(idx, slice):
             return self.sites[idx]
         raise IndexError("Index must be an integer or slice!")
+
+    def __iter__(self) -> Iterator[LightElement]:
+        yield from self.sites
 
     @property
     def frac_coords(self) -> np.ndarray:
@@ -305,54 +300,33 @@ class LightStructure:
         return self.__len__()
 
     @classmethod
-    def from_sites(cls, sites: Sequence[LightElement]) -> Self:
-        return cls(
-            sites[0].lattice,
-            [site._element for site in sites],
-            [site.frac_coords for site in sites],
-            coords_are_cartesian=False,
-        )
-
-    def as_dict(self) -> dict[str, Any]:
-        site_dct = [site.as_dict() for site in self.sites]
-        for i in range(len(self)):
-            site_dct[i].pop("lattice")
-        return {
-            "@class": self.__class__,
-            "@module": self.__module__,
-            "lattice": self.lattice.as_dict(),
-            "sites": site_dct,
-        }
-
-    def from_dict(cls, dct: dict[str, Any]) -> Self:
-        dct["sites"][0]["lattice"] = dct["lattice"]
-        return cls.from_sites(dct["sites"])
-
-    @classmethod
-    def from_dict(cls, dct: dict[str, Any]) -> Self:
-        return cls(
-            **{
-                k: dct.get(k)
-                for k in (
-                    "lattice",
-                    "site_composition",
-                    "coords",
-                    "coords_are_cartesian",
-                )
-            }
-        )
-
-    @classmethod
     def from_structure(cls, structure: Structure) -> Self:
         if not structure.is_ordered:
             raise ValueError(
                 "Currently, `LightStructure` is intended to handle only ordered materials."
             )
+        
+        lattice = LightLattice(structure.lattice.matrix)
+        properties = [{} for _ in range(len(structure))]
+        for idx, site in enumerate(structure):
+            for k in ("charge","magmom"):
+                if (prop := site.properties.get(k)) is not None:
+                    properties[idx][k] = prop
+
+        sites = [
+            LightElement.from_element(
+                next(iter(site.species.remove_charges().as_dict())),
+                lattice=lattice,
+                coords=site.frac_coords,
+                coords_are_cartesian=False,
+                **properties[idx]
+            )
+            for idx, site in enumerate(structure)
+        ]
+
         return cls(
             lattice=structure.lattice.matrix,
-            site_composition=[str(next(iter(site.species))) for site in structure],
-            coords=structure.cart_coords,
-            coords_are_cartesian=True,
+            sites = sites
         )
 
     @classmethod
@@ -379,7 +353,7 @@ class LightStructure:
         as_str += "\nCartesian Coordinates\n"
 
         as_str += "\n".join(
-            f"{self[idx]._element}{' '*(3-len(str(self[idx]._element)))}: "
+            f"{self[idx].element}{' '*(3-len(str(self[idx].element)))}: "
             + ",".join(site_str)
             for idx, site_str in enumerate(coords_str)
         )
